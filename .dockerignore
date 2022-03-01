@@ -1,0 +1,6 @@
+.dockerignore
+.github
+.gitignore
+.git
+Dockerfile
+infra/

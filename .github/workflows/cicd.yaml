@@ -1,0 +1,97 @@
+name: Build and push image and deploy to aks
+
+on:
+  push:
+    branches:
+      - main
+      
+env:
+  CR_REPO: zgw/zgw-catalog
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    outputs:
+      tagToDeploy: ${{ steps.prep.outputs.DOCKERTAG }}
+
+    steps:
+      - name: 'Checkout repo'
+        uses: actions/checkout@main
+
+      - name: 'Generate unique docker tag to deploy with Helm'
+        id: prep
+        run: |
+            branch=${GITHUB_REF##*/}
+            sha=${GITHUB_SHA::8}
+            ts=$(date +%s)
+            echo "::set-output name=DOCKERTAG::${branch}-${sha}-${ts}"
+
+      - name: 'Docker meta'
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.CR_REPO }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=ref,event=tag
+            type=sha
+            ${{ steps.prep.outputs.DOCKERTAG }}
+
+      - name: 'Login to acr'
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: 'Set up Docker Buildx'
+        uses: docker/setup-buildx-action@v1
+
+      - name: 'Cache Docker layers'
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: 'Build and push image'
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - # Temp fix
+        # https://github.com/docker/build-push-action/issues/252
+        # https://github.com/moby/buildkit/issues/1896
+        name: 'Move cache'
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  deploy-to-test:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    needs: build
+    environment: test
+
+    steps:
+      - name: 'Checkout repo'
+        uses: actions/checkout@main
+
+      - name: 'Deploy to AKS'
+        uses: ./.github/actions/deploy-to-aks
+        with:
+          credentials: '${{ secrets.AZURE_CREDENTIALS }}'
+          resource-group: '${{ secrets.AKS_RG_TEST_ACC }}'
+          cluster-name: '${{ secrets.AKS_CL_NAME_TEST_ACC }}'
+          release-name: zgw-catalog
+          values-file: infra/values-test.yaml
+          namespace: dhonline-test
+          full-image-url: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.CR_REPO }}:${{ needs.build.outputs.tagToDeploy }}
