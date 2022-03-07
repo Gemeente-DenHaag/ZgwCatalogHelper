@@ -1,6 +1,7 @@
 name: Build and push image and deploy to aks
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
