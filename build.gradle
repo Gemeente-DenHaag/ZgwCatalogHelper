@@ -1,6 +1,6 @@
 buildscript {
     ext {
-        springBootVersion = '2.6.3'
+        springBootVersion = '2.6.5'
     }
     repositories {
         mavenCentral()
@@ -12,11 +12,13 @@ buildscript {
 
 plugins {
     id 'java-library'
-    id 'org.springframework.boot' version '2.6.3'
+    id 'org.springframework.boot' version '2.6.5'
+    id 'maven-publish'
 }
 
 group 'nl.denhaag'
 version '1.0-SNAPSHOT'
+
 
 repositories {
     mavenCentral()
@@ -29,5 +31,5 @@ dependencies {
 
     implementation("javax.xml.bind:jaxb-api:2.3.1")
     implementation("org.glassfish.jaxb:jaxb-runtime:2.3.6")
-
 }
+
